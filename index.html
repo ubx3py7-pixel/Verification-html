@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Verify — Ara Ara</title>
+<style>
+  :root{--bg:#0f1720;--card:#111827;--muted:#9aa3ad;--accent:#2aa0ff;--white:#f8fafc}
+  @media (prefers-color-scheme: light){
+    :root{--bg:#f3f6f9;--card:#fff;--muted:#6b7280;--accent:#0b84ff;--white:#0b1220}
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
+  body{display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg);color:var(--white)}
+  .card{width:100%;max-width:520px;background:var(--card);padding:18px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.5)}
+  .top{display:flex;align-items:center;gap:12px}
+  .logo{width:84px;height:84px;border-radius:12px;overflow:hidden;background:linear-gradient(135deg,var(--accent),#5ee1ff)}
+  .logo img{width:100%;height:100%;object-fit:cover;display:block}
+  h1{margin:8px 0 6px;font-size:18px}
+  p.desc{margin:0 0 12px;color:var(--muted);font-size:13px}
+  .link-preview{margin:12px 0;padding:10px;border-radius:8px;background:rgba(255,255,255,0.02);color:var(--muted);font-size:13px;word-break:break-all}
+  .captcha-row{display:flex;gap:8px;align-items:center;margin-top:12px}
+  .captcha{flex:1;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--white)}
+  .verify-btn{width:100%;padding:12px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:700;cursor:pointer;margin-top:12px}
+  .hint{font-size:12px;color:var(--muted);margin-top:8px}
+  footer{font-size:12px;color:var(--muted);text-align:center;margin-top:10px}
+  .small-err{color:#ffb4b4;font-size:13px;margin-top:8px}
+</style>
+</head>
+<body>
+  <main class="card" role="main" aria-labelledby="title">
+    <div class="top">
+      <div class="logo"><img id="pageLogo" src="logo.jpg" alt="Logo" /></div>
+      <div style="flex:1">
+        <h1 id="title">Verify you are human — Ara Ara 💜</h1>
+        <p class="desc">Solve the simple captcha below to continue to the bot.</p>
+      </div>
+    </div>
+
+    <div id="preview" class="link-preview">Preparing...</div>
+
+    <div id="captchaArea">
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="captchaInput" class="captcha" type="text" placeholder="Solve the captcha: e.g. 7" />
+        <button id="reload" title="new challenge" style="padding:10px;border-radius:8px;background:#fff0;border:0;cursor:pointer">⟳</button>
+      </div>
+      <div id="challengeText" class="hint" style="margin-top:8px">Loading challenge…</div>
+      <div id="err" class="small-err" style="display:none"></div>
+      <button id="verify" class="verify-btn">Tap to Verify</button>
+    </div>
+
+    <div id="after" style="display:none">
+      <div class="hint">Verified — redirecting…</div>
+    </div>
+
+    <footer>If automatic redirect fails, tap <a id="fallbackLink" href="#" style="color:var(--accent)">this link</a>.</footer>
+  </main>
+
+<script>
+(function(){
+  // helpers
+  function q(name){ return new URLSearchParams(location.search).get(name); }
+  function dec(s){ try{return decodeURIComponent(s);}catch(e){return s;} }
+  function isTg(u){ return /^tg:/i.test(u) || /^tg%3A/i.test(u); }
+
+  // read redirect param
+  var raw = q('redirect') || q('r') || '';
+  var redirect = raw ? dec(raw) : '';
+  var preview = document.getElementById('preview');
+  var fallback = document.getElementById('fallbackLink');
+  var verifyBtn = document.getElementById('verify');
+  var captchaInput = document.getElementById('captchaInput');
+  var challengeText = document.getElementById('challengeText');
+  var errBox = document.getElementById('err');
+  var reloadBtn = document.getElementById('reload');
+  var after = document.getElementById('after');
+  var captchaAnswer = null;
+  var verifiedKey = 'verified_' + btoa(location.pathname + (redirect||''));
+
+  function showPreview(txt){
+    preview.textContent = txt || 'No redirect parameter detected. Enter one in the URL.';
+    fallback.href = txt || '#';
+    fallback.textContent = txt ? 'Open destination' : 'No redirect set';
+  }
+
+  // Redirect normalization for plain username
+  if(redirect){
+    var maybe = redirect.trim();
+    if(!/^https?:\/\//i.test(maybe) && !/^tg:/i.test(maybe)){
+      var u = maybe.replace(/^@/,'');
+      if(/^[A-Za-z0-9_]{4,}$/i.test(u)){
+        redirect = 'tg://resolve?domain=' + encodeURIComponent(u);
+      }
+    }
+  }
+  if(!redirect){
+    showPreview('');
+  } else {
+    showPreview(redirect);
+  }
+
+  // create simple, tamper-resistant challenge
+  function newChallenge(){
+    // random 2-digit math: addition/subtraction or small multiplication
+    var a = Math.floor(Math.random()*9)+1;
+    var b = Math.floor(Math.random()*9)+1;
+    var type = Math.random() < 0.7 ? 'add' : (Math.random()<0.5?'sub':'mul');
+    var text, ans;
+    if(type==='add'){ text = a + ' + ' + b + ' = ?'; ans = a + b; }
+    else if(type==='sub'){ if(a<b){var t=a;a=b;b=t;} text = a + ' - ' + b + ' = ?'; ans = a - b; }
+    else { text = a + ' × ' + b + ' = ?'; ans = a * b; }
+    challengeText.textContent = 'Solve: ' + text;
+    captchaInput.value = '';
+    captchaAnswer = String(ans);
+    errBox.style.display='none';
+    // simple honeypot + timing: store start time
+    captchaInput.dataset.started = Date.now();
+  }
+  reloadBtn.addEventListener('click', newChallenge);
+
+  // small anti-bot: require at least 600ms of human time before submit
+  function humanish(){
+    var start = parseInt(captchaInput.dataset.started || '0',10);
+    var spent = Date.now() - start;
+    return spent > 500; // at least half-second of input time
+  }
+
+  // main verify logic
+  verifyBtn.addEventListener('click', function(){
+    errBox.style.display='none';
+    var v = (captchaInput.value || '').trim();
+    if(!v){ errBox.textContent='Please solve the challenge.'; errBox.style.display='block'; return; }
+    if(!humanish()){ errBox.textContent='Took too fast — try again.'; errBox.style.display='block'; newChallenge(); return; }
+    // allow only numeric answers
+    if(!/^-?\d+$/.test(v)){ errBox.textContent='Answer must be a number.'; errBox.style.display='block'; return; }
+    if(v !== captchaAnswer){
+      errBox.textContent = 'Incorrect — try new challenge.';
+      errBox.style.display = 'block';
+      newChallenge();
+      return;
+    }
+    // passed
+    try{ localStorage.setItem(verifiedKey,'1'); }catch(e){}
+    document.getElementById('captchaArea').style.display='none';
+    after.style.display='block';
+    // redirect
+    setTimeout(function(){
+      if(!redirect) { fallback.click(); return; }
+      try { 
+        window.location.href = redirect;
+      } catch(e) {
+        window.open(redirect,'_self');
+      }
+    }, 400);
+  });
+
+  // If already verified recently, show quick note
+  try { if(localStorage.getItem(verifiedKey) === '1'){ document.getElementById('captchaArea').style.display='none'; after.style.display='block'; setTimeout(function(){ if(redirect) window.location.href = redirect; },500); } } catch(e){}
+
+  // start
+  newChallenge();
+
+  // fallback link behavior
+  fallback.addEventListener('click', function(e){
+    if(!redirect){ e.preventDefault(); alert('No redirect defined.'); }
+  });
+
+})();
+</script>
+</body>
+</html>
