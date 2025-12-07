@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Verify</title>
+  <style>
+    :root{
+      --bg:#0f1720; --card:#111827; --muted:#9aa3ad; --accent:#2aa0ff; --white:#f8fafc;
+    }
+    @media (prefers-color-scheme: light){
+      :root{
+        --bg:#f3f6f9; --card:#ffffff; --muted:#6b7280; --accent:#0b84ff; --white:#0b1220;
+      }
+    }
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+    body{background:linear-gradient(180deg, rgba(0,0,0,0.06), transparent), var(--bg); color:var(--white); display:flex; align-items:center; justify-content:center; padding:20px;}
+    .card{width:100%; max-width:480px; background:var(--card); border-radius:14px; box-shadow:0 8px 30px rgba(2,6,23,0.5); padding:20px; box-sizing:border-box;}
+    .logo-wrap{height:86px; width:86px; border-radius:16px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,var(--accent), #5ee1ff); margin-right:12px; flex-shrink:0;}
+    .logo-wrap img{width:100%; height:100%; object-fit:cover; display:block;}
+    .row{display:flex; gap:12px; align-items:center;}
+    h1{margin:14px 0 6px; font-size:18px;}
+    p.desc{margin:0 0 18px; color:var(--muted); font-size:13px; line-height:1.4;}
+    .verify-btn{width:100%; padding:14px 16px; background:var(--accent); color:#fff; border:0; border-radius:10px; font-size:16px; font-weight:600; cursor:pointer; box-shadow:0 6px 18px rgba(10,20,40,0.25);}
+    .verify-btn:active{transform:translateY(1px)}
+    .small{font-size:12px; color:var(--muted); margin-top:12px;}
+    .link-preview{margin-top:10px;padding:10px;border-radius:8px;background:rgba(255,255,255,0.02); color:var(--muted); font-size:13px; word-break:break-all}
+    .input{width:100%; padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.04); background:transparent; color:var(--white); box-sizing:border-box; margin-top:8px}
+    .actions{display:flex; gap:8px; margin-top:12px;}
+    .ghost{flex:1; padding:10px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.06); color:var(--muted); cursor:pointer;}
+    .hidden{display:none;}
+    footer{margin-top:16px; text-align:center; font-size:12px; color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="card" role="main" aria-labelledby="title">
+    <div class="row">
+      <div class="logo-wrap" aria-hidden="true">
+        <!-- Put your logo image in the same folder and name it "logo.png" -->
+        <img src="logo.png" alt="Logo" id="pageLogo" />
+      </div>
+      <div style="flex:1;">
+        <h1 id="title">Verify you are human — Ara Ara 💜</h1>
+        <p class="desc">Tap the button below to confirm you’re human. After verification you will be redirected to your bot.</p>
+      </div>
+    </div>
+
+    <div id="preview" class="link-preview">Preparing...</div>
+
+    <button id="verify" class="verify-btn">Tap to Verify</button>
+
+    <div class="small" id="status">This page does not collect personal data.</div>
+
+    <div id="optional" class="hidden">
+      <input id="manualRedirect" class="input" placeholder="Enter redirect URL (tg:// or https://)" />
+      <div class="actions">
+        <button id="useManual" class="verify-btn" style="flex:1">Use this URL</button>
+        <button id="cancelManual" class="ghost">Cancel</button>
+      </div>
+    </div>
+
+    <footer>
+      If the automatic redirect doesn't open, tap <a id="fallbackLink" href="#" style="color:var(--accent); text-decoration:none">this link</a>.
+    </footer>
+  </div>
+
+  <script>
+    (function(){
+      function q(name){ return new URLSearchParams(location.search).get(name); }
+      function decodeParam(v){ try { return decodeURIComponent(v); } catch(e){ return v; } }
+
+      var raw = q('redirect') || q('r') || '';
+      var redirect = raw ? decodeParam(raw) : '';
+      var preview = document.getElementById('preview');
+      var fallback = document.getElementById('fallbackLink');
+      var verifyBtn = document.getElementById('verify');
+      var status = document.getElementById('status');
+      var optional = document.getElementById('optional');
+      var manual = document.getElementById('manualRedirect');
+      var useManual = document.getElementById('useManual');
+      var cancelManual = document.getElementById('cancelManual');
+
+      function showPreview(txt){
+        preview.textContent = txt;
+        fallback.href = txt || '#';
+        fallback.textContent = txt ? 'Open destination' : 'No redirect set';
+      }
+
+      if(!redirect){
+        showPreview('No redirect parameter detected. You can enter one below.');
+        optional.classList.remove('hidden');
+        verifyBtn.textContent = 'Enter redirect first';
+        verifyBtn.disabled = true;
+      } else {
+        showPreview(redirect);
+      }
+
+      var verifiedKey = 'verified_redirect_' + btoa(location.pathname + (redirect || ''));
+      function setVerified(){ try{ localStorage.setItem(verifiedKey, '1'); }catch(e){} }
+      function wasVerified(){ try{ return localStorage.getItem(verifiedKey) === '1'; }catch(e){return false;} }
+
+      function doRedirect(url){
+        if(!url) return;
+        setVerified();
+        try { url = decodeURIComponent(url); } catch(e){}
+        if(/^tg:/i.test(url)){
+          window.location.href = url;
+          setTimeout(function(){}, 800);
+          return;
+        }
+        try { window.location.href = url; } catch(e){ window.open(url, '_self'); }
+      }
+
+      verifyBtn.addEventListener('click', function(){
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = 'Verifying…';
+        setTimeout(function(){
+          verifyBtn.textContent = 'Redirecting…';
+          doRedirect(redirect);
+        }, 600);
+      });
+
+      useManual.addEventListener('click', function(){
+        var val = manual.value.trim();
+        if(!val){ manual.focus(); return; }
+        redirect = val;
+        showPreview(redirect);
+        optional.classList.add('hidden');
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = 'Tap to Verify';
+      });
+      cancelManual.addEventListener('click', function(){ optional.classList.add('hidden'); verifyBtn.disabled = false; verifyBtn.textContent='Tap to Verify'; });
+
+      if(wasVerified()){
+        status.textContent = 'You already verified recently. Tapping will open the destination.';
+      }
+
+      fallback.addEventListener('click', function(e){
+        if(!redirect){ e.preventDefault(); optional.classList.remove('hidden'); }
+      });
+
+      preview.addEventListener('click', function(){ optional.classList.remove('hidden'); manual.value = redirect || ''; });
+
+      if(redirect){
+        var maybeUser = redirect.trim();
+        if(!/^https?:\\/\\//i.test(maybeUser) && !/^tg:/i.test(maybeUser)){
+          var u = maybeUser.replace(/^@/, '');
+          if(/^[A-Za-z0-9_]{4,}$/i.test(u)){
+            redirect = 'tg://resolve?domain=' + encodeURIComponent(u);
+            showPreview(redirect);
+            fallback.href = 'https://t.me/' + encodeURIComponent(u);
+          }
+        }
+      }
+      try { if(q('autoverify') === '1' && redirect){ setTimeout(function(){ verifyBtn.click(); }, 700); } } catch(e){}
+    })();
+  </script>
+</body>
+        </html>
