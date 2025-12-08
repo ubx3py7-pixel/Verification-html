@@ -62,8 +62,9 @@
   function dec(s){ try{return decodeURIComponent(s);}catch(e){return s;} }
   function isTg(u){ return /^tg:/i.test(u) || /^tg%3A/i.test(u); }
 
-  // read redirect param
-  var raw = q('redirect') || q('r') || '';
+  // --- DEFAULT REDIRECT ---
+  // Use provided redirect param if present; otherwise fall back to the bot link:
+  var raw = q('redirect') || q('r') || 'http://t.me/LINKGAURDBOT';
   var redirect = raw ? dec(raw) : '';
   var preview = document.getElementById('preview');
   var fallback = document.getElementById('fallbackLink');
@@ -77,12 +78,21 @@
   var verifiedKey = 'verified_' + btoa(location.pathname + (redirect||''));
 
   function showPreview(txt){
+    // show the destination text for user information,
+    // but DO NOT put the real link in href to avoid bypass.
     preview.textContent = txt || 'No redirect parameter detected. Enter one in the URL.';
-    fallback.href = txt || '#';
-    fallback.textContent = txt ? 'Open destination' : 'No redirect set';
+    fallback.href = '#'; // never set the real redirect here
+    // store destination in data-* for controlled navigation
+    if(txt){
+      fallback.dataset.dest = txt;
+      fallback.textContent = 'Open destination';
+    } else {
+      delete fallback.dataset.dest;
+      fallback.textContent = 'No redirect set';
+    }
   }
 
-  // Redirect normalization for plain username
+  // Redirect normalization for plain username (if someone passes e.g. @username)
   if(redirect){
     var maybe = redirect.trim();
     if(!/^https?:\/\//i.test(maybe) && !/^tg:/i.test(maybe)){
@@ -100,7 +110,7 @@
 
   // create simple, tamper-resistant challenge
   function newChallenge(){
-    // random 2-digit math: addition/subtraction or small multiplication
+    // random 1-digit math: addition/subtraction or small multiplication
     var a = Math.floor(Math.random()*9)+1;
     var b = Math.floor(Math.random()*9)+1;
     var type = Math.random() < 0.7 ? 'add' : (Math.random()<0.5?'sub':'mul');
@@ -113,11 +123,11 @@
     captchaAnswer = String(ans);
     errBox.style.display='none';
     // simple honeypot + timing: store start time
-    captchaInput.dataset.started = Date.now();
+    try { captchaInput.dataset.started = Date.now(); } catch(e){}
   }
   reloadBtn.addEventListener('click', newChallenge);
 
-  // small anti-bot: require at least 600ms of human time before submit
+  // small anti-bot: require brief humanish delay
   function humanish(){
     var start = parseInt(captchaInput.dataset.started || '0',10);
     var spent = Date.now() - start;
@@ -144,7 +154,10 @@
     after.style.display='block';
     // redirect
     setTimeout(function(){
-      if(!redirect) { fallback.click(); return; }
+      if(!redirect) { // nothing to go to
+        alert('No redirect defined.');
+        return;
+      }
       try { 
         window.location.href = redirect;
       } catch(e) {
@@ -153,15 +166,41 @@
     }, 400);
   });
 
-  // If already verified recently, show quick note
-  try { if(localStorage.getItem(verifiedKey) === '1'){ document.getElementById('captchaArea').style.display='none'; after.style.display='block'; setTimeout(function(){ if(redirect) window.location.href = redirect; },500); } } catch(e){}
+  // If already verified recently, quick redirect
+  try {
+    if(localStorage.getItem(verifiedKey) === '1'){
+      document.getElementById('captchaArea').style.display='none';
+      after.style.display='block';
+      setTimeout(function(){ if(redirect) window.location.href = redirect; },500);
+    }
+  } catch(e){}
 
   // start
   newChallenge();
 
-  // fallback link behavior
+  // fallback link behavior (safe)
   fallback.addEventListener('click', function(e){
-    if(!redirect){ e.preventDefault(); alert('No redirect defined.'); }
+    e.preventDefault(); // we handle navigation exclusively via JS
+    var dest = fallback.dataset.dest;
+    if(!dest){
+      alert('No redirect defined.');
+      return;
+    }
+    // check verification
+    var ok = false;
+    try { ok = (localStorage.getItem(verifiedKey) === '1'); } catch(e){}
+    if(!ok){
+      alert('Please complete the verification first.');
+      // optionally focus input to prompt solving
+      try { captchaInput.focus(); } catch(e){}
+      return;
+    }
+    // verified -> navigate
+    try {
+      window.location.href = redirect;
+    } catch(ex){
+      window.open(redirect,'_self');
+    }
   });
 
 })();
